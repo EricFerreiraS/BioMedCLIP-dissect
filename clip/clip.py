@@ -19,6 +19,8 @@ try:
 except ImportError:
     BICUBIC = Image.BICUBIC
 
+from open_clip import create_model_from_pretrained, get_tokenizer, tokenize
+import open_clip
 
 if packaging.version.parse(torch.__version__) < packaging.version.parse("1.7.1"):
     warnings.warn("PyTorch version 1.7.1 or higher is recommended")
@@ -37,6 +39,7 @@ _MODELS = {
     "ViT-B/16": "https://openaipublic.azureedge.net/clip/models/5806e77cd80f8b59890b7e101eabd078d9fb84e6937f9e85e4ecb61988df416f/ViT-B-16.pt",
     "ViT-L/14": "https://openaipublic.azureedge.net/clip/models/b8cca3fd41ae0c99ba7e8951adf17d267cdb84cd88be6f7c2e0eca1737a03836/ViT-L-14.pt",
     "ViT-L/14@336px": "https://openaipublic.azureedge.net/clip/models/3035c92b350959924f9f00213499208652fc7ea050643e8b385c2dac08641f02/ViT-L-14-336px.pt",
+    "BiomedCLIP":"hf-hub:microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224",
 }
 
 
@@ -117,7 +120,12 @@ def load(name: str, device: Union[str, torch.device] = "cuda" if torch.cuda.is_a
         A torchvision transform that converts a PIL image into a tensor that the returned model can take as its input
     """
     if name in _MODELS:
-        model_path = _download(_MODELS[name], download_root or os.path.expanduser("~/.cache/clip"))
+        if name == "BiomedCLIP":
+            model, preprocess = create_model_from_pretrained(_MODELS[name])
+            model.to(device)
+            return model, preprocess
+        else:
+            model_path = _download(_MODELS[name], download_root or os.path.expanduser("~/.cache/clip"))
     elif os.path.isfile(name):
         model_path = name
     else:
@@ -230,3 +238,31 @@ def tokenize(texts: Union[str, List[str]], context_length: int = 77, truncate: b
         result[i, :len(tokens)] = torch.tensor(tokens)
 
     return result
+
+
+def tokenize_biomed(texts: Union[str, List[str]], context_length: int = 256, truncate: bool = True) -> torch.LongTensor:
+    """
+    Tokenizes input text using the BiomedCLIP tokenizer (PubMedBERT-based).
+
+    Parameters
+    ----------
+    texts : Union[str, List[str]]
+        An input string or a list of input strings to tokenize.
+
+    context_length : int
+        The context length to use; BiomedCLIP uses 256 tokens.
+
+    truncate: bool
+        Whether to truncate the text in case its encoding is longer than the context length.
+
+    Returns
+    -------
+    A two-dimensional tensor containing the resulting tokens, shape = [number of input strings, context_length].
+    """
+    if isinstance(texts, str):
+        texts = [texts]
+
+    # Tokenize using BiomedCLIP's tokenizer
+    tokenizer = get_tokenizer(_MODELS['BiomedCLIP'])
+
+    return tokenizer(texts)

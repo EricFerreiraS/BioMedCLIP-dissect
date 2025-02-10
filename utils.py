@@ -2,7 +2,7 @@ import os
 import math
 import numpy as np
 import torch
-import clip
+import clip.clip as clip
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 import data_utils
@@ -134,7 +134,10 @@ def save_activations(clip_name, target_name, target_layers, d_probe,
     #ignore empty lines
     words = [i for i in words if i!=""]
     
-    text = clip.tokenize(["{}".format(word) for word in words]).to(device)
+    if clip_name!="BiomedCLIP":
+        text = clip.tokenize(["{}".format(word) for word in words]).to(device)
+    else:
+        text = clip.tokenize_biomed(["{}".format(word) for word in words]).to(device)
     
     save_names = get_save_names(clip_name = clip_name, target_name = target_name,
                                 target_layer = '{}', d_probe = d_probe, concept_set = concept_set,

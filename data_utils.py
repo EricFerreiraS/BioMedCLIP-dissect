@@ -4,7 +4,7 @@ import pandas as pd
 from torchvision import datasets, transforms, models
 
 DATASET_ROOTS = {"imagenet_val": "YOUR_PATH/ImageNet_val/",
-                "broden": "data/broden1_224/images/"}
+                "broden": "/mnt/data/data/broden1_224/images/"}
 
 
 def get_target_model(target_name, device):

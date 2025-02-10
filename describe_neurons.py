@@ -12,7 +12,7 @@ import similarity
 parser = argparse.ArgumentParser(description='CLIP-Dissect')
 
 parser.add_argument("--clip_model", type=str, default="ViT-B/16", 
-                    choices=['RN50', 'RN101', 'RN50x4', 'RN50x16', 'RN50x64', 'ViT-B/32', 'ViT-B/16', 'ViT-L/14'],
+                    choices=['RN50', 'RN101', 'RN50x4', 'RN50x16', 'RN50x64', 'ViT-B/32', 'ViT-B/16', 'ViT-L/14','BiomedCLIP'],
                    help="Which CLIP-model to use")
 parser.add_argument("--target_model", type=str, default="resnet50", 
                    help=""""Which model to dissect, supported options are pretrained imagenet models from
