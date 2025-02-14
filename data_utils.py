@@ -21,6 +21,8 @@ class ACDCDataset(Dataset):
         self.image_paths = []
         self.label_paths = []
         self.patient_labels = self.load_patient_labels()
+        # Create a mapping of text labels to numbers
+        self.label_mapping = self.create_label_mapping()
     
         for patient_folder in os.listdir(data_dir):
             patient_path = os.path.join(data_dir, patient_folder)
@@ -41,13 +43,20 @@ class ACDCDataset(Dataset):
         labels = {}
         for patient_folder in os.listdir(self.data_dir):
             patient_path = os.path.join(self.data_dir, patient_folder)
-            cfg_path = os.path.join(patient_path, f"{patient_folder}.cfg")
+            cfg_path = os.path.join(patient_path, "Info.cfg")
             if os.path.exists(cfg_path):
                 with open(cfg_path, "r") as f:
                     for line in f:
                         if "Group" in line:
-                            labels[patient_folder] = int(line.split("=")[-1].strip())
+                            labels[patient_folder] = line.split(":")[-1].strip()
         return labels
+    
+    def create_label_mapping(self):
+        """ Create a mapping from text labels to numeric values. """
+        unique_labels = set(self.patient_labels.values())  # Extract unique labels
+        label_mapping = {label: idx for idx, label in enumerate(sorted(unique_labels))}  # Assign numbers
+        #print(f"Label Mapping: {label_mapping}")  # Debugging: Check mapping
+        return label_mapping
     
     def _pad_image(self, image: np.ndarray) -> np.ndarray:
         """
@@ -157,31 +166,32 @@ class ACDCDataset(Dataset):
         label_path = self.label_paths[idx]
         patient_folder = os.path.basename(os.path.dirname(img_path))
         patient_label = self.patient_labels.get(patient_folder, -1)
-
+        patient_label = self.label_mapping.get(patient_label, -1)  # Default to -1 if not in mapping
+        patient_label = torch.tensor(patient_label, dtype=torch.long)
         # Load images using nibabel
         img_nib = nib.load(img_path)
-        label_nib = nib.load(label_path)
+        #label_nib = nib.load(label_path)
         
         img = img_nib.get_fdata().astype(np.float32)  
-        label = label_nib.get_fdata().astype(np.int64)  
-
+        #label = label_nib.get_fdata().astype(np.int64)  
+       
         # Normalize image to [0,1]
         img = (img - img.min()) / (img.max() - img.min() + 1e-5)
         
         # Convert to tensors and add channel dim
         img = torch.tensor(img).unsqueeze(0)  # (1, D, H, W)
         #img = img.repeat(3, 1, 1, 1)  # Repeat to get 3 channels: (3, D, H, W)
-        label = torch.tensor(label)
+        #label = torch.tensor(label)
         
         # Apply padding to match target shape
         img = self._pad_image(img)
-        label = self._pad_label(label)  # Ensure labels are also the same size
+        #label = self._pad_label(label)  # Ensure labels are also the same size
         
         if self.transform:
             img = self.transform(img)
         img = img.squeeze(0)
        
-        return img, label#, patient_label
+        return img, patient_label
 
 def get_target_model(target_name, device):
     """
