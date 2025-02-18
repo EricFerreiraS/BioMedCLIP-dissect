@@ -39,13 +39,28 @@ def train_model(train_dir, test_dir, num_epochs=50, batch_size=16, learning_rate
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
     
     # Load ResNet-152
-    model = models.resnet152(weights=None)
+    #model = models.resnet152(weights=None)
+    model = models.resnet152(weights='ResNet152_Weights.IMAGENET1K_V2')
+
+    # Freeze all layers
+    for param in model.parameters():
+        param.requires_grad = False
+
+    for param in model.layer4.parameters():
+            param.requires_grad = True
+    
+    for param in model.fc.parameters():
+            param.requires_grad = True
+
     model.fc = nn.Linear(model.fc.in_features, 5)  # 4 classes in ACDC
     model = model.to(device)
     
     criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
+    #optimizer = optim.SGD(model.parameters(), lr=learning_rate, weight_decay=1e-4,momentum=0.9)
+    #optimizer = optim.AdamW(model.fc.parameters(), lr=learning_rate, weight_decay=1e-4)
     optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=5)
+    #scheduler = CosineAnnealingLR(optimizer, T_max=num_epochs, eta_min=1e-6)
     best_acc = 0.0
     # Training loop
     for epoch in range(num_epochs):
@@ -92,4 +107,4 @@ def train_model(train_dir, test_dir, num_epochs=50, batch_size=16, learning_rate
     writer.close()
 
 if __name__ == "__main__":
-    train_model("/mnt/data/ACDC/training/", "/mnt/data/ACDC/testing/", num_epochs=50, batch_size=128)
+    train_model("/mnt/data/ACDC/training/", "/mnt/data/ACDC/testing/", num_epochs=50, batch_size=32)

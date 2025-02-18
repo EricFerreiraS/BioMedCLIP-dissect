@@ -31,13 +31,30 @@ def train_model(train_dir, test_dir, num_epochs=50, batch_size=16, learning_rate
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
 
     # Load DenseNet-121
-    model = models.densenet161(weights=None)
+    model = models.densenet161(weights='DenseNet161_Weights.IMAGENET1K_V1')
+
+    # Freeze all layers
+    for param in model.parameters():
+        param.requires_grad = False
+
+    # Unfreeze the last dense block (denseblock4)
+    for name, param in model.named_parameters():
+        if 'denseblock4' in name:
+            param.requires_grad = True
+
+    # Unfreeze the classifier layer
+    for name, param in model.named_parameters():
+        if 'classifier' in name:
+            param.requires_grad = True
+
+
     model.classifier = nn.Linear(model.classifier.in_features, 5)  # 4 classes in ACDC
     model = model.to(device)
 
     criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
     optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=5)
+    #scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs, eta_min=1e-6)
     best_acc = 0.0
 
     # Training loop

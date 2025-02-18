@@ -63,6 +63,7 @@ def save_target_activations(target_model, dataset, save_name, target_layers = ["
         hooks[target_layer] = eval(command)
     
     with torch.no_grad():
+        print("saving target activations")
         for images, labels in tqdm(DataLoader(dataset, batch_size, num_workers=8, pin_memory=True)):
             features = target_model(images.to(device))
     
@@ -86,6 +87,7 @@ def save_clip_image_features(model, dataset, save_name, batch_size=1000 , device
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
     with torch.no_grad():
+        print("saving clip image features")
         for images, labels in tqdm(DataLoader(dataset, batch_size, num_workers=8, pin_memory=True)):
             features = model.encode_image(images.to(device))
             all_features.append(features)
@@ -101,6 +103,7 @@ def save_clip_text_features(model, text, save_name, batch_size=1000):
     _make_save_dir(save_name)
     text_features = []
     with torch.no_grad():
+        print("saving clip text features")
         for i in tqdm(range(math.ceil(len(text)/batch_size))):
             text_features.append(model.encode_text(text[batch_size*i:batch_size*(i+1)]))
     text_features = torch.cat(text_features, dim=0)
@@ -115,6 +118,7 @@ def get_clip_text_features(model, text, batch_size=1000):
     """
     text_features = []
     with torch.no_grad():
+        print('getting clip text features')
         for i in tqdm(range(math.ceil(len(text)/batch_size))):
             text_features.append(model.encode_text(text[batch_size*i:batch_size*(i+1)]))
     text_features = torch.cat(text_features, dim=0)

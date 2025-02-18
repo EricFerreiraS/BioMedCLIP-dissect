@@ -6,12 +6,11 @@ import nibabel as nib
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import torch.nn.functional as F
+from PIL import Image
 
 DATASET_ROOTS = {"imagenet_val": "YOUR_PATH/ImageNet_val/",
                 "broden": "/mnt/data/broden1_224/images/",
                 "acdc_train": "/mnt/data/ACDC/training/"}
-
-import torch.nn.functional as F
 
 class ACDCDataset(Dataset):
     def __init__(self, data_dir, transform=None, target_shape=(3,224,224)):  
@@ -23,22 +22,26 @@ class ACDCDataset(Dataset):
         self.patient_labels = self.load_patient_labels()
         # Create a mapping of text labels to numbers
         self.label_mapping = self.create_label_mapping()
-    
+        
+        # Collect all NIfTI file paths and their corresponding slice indices
+        self.image_slices = []
         for patient_folder in os.listdir(data_dir):
             patient_path = os.path.join(data_dir, patient_folder)
             if os.path.isdir(patient_path):
                 for file in os.listdir(patient_path):
-                    if "_gt" in file and file.endswith(".nii.gz"):
-                        img_file = file.replace("_gt", "")
-                        img_path = os.path.join(patient_path, img_file)
+                    if "_gt" not in file and file.endswith(".nii.gz") and "4d" not in file:
+                        nifti_path = os.path.join(patient_path, file)
                         label_path = os.path.join(patient_path, file)
-                        if os.path.exists(img_path):
-                            self.image_paths.append(img_path)
+                        img = nib.load(nifti_path)
+                        num_slices = img.shape[2]  # Number of slices along z-axis
+                        for slice_idx in range(num_slices):
+                            self.image_slices.append((nifti_path, slice_idx))  # Store path and slice index
                             self.label_paths.append(label_path)
+                            self.image_paths.append(nifti_path)
     
     def __len__(self):
-        return len(self.image_paths)
-
+        return len(self.image_slices)
+    
     def load_patient_labels(self):
         labels = {}
         for patient_folder in os.listdir(self.data_dir):
@@ -57,141 +60,64 @@ class ACDCDataset(Dataset):
         label_mapping = {label: idx for idx, label in enumerate(sorted(unique_labels))}  # Assign numbers
         #print(f"Label Mapping: {label_mapping}")  # Debugging: Check mapping
         return label_mapping
-    
-    def _pad_image(self, image: np.ndarray) -> np.ndarray:
-        """
-        Pads a 4D image array (C, D, H, W) to match target size.
-        
-        Args:
-            image (np.ndarray): Input image of shape (C, D, H, W)
-            
-        Returns:
-            np.ndarray: Padded image of shape (C, target_D, target_H, target_W)
-        """
-        c, d, h, w = image.shape
-        target_d, target_h, target_w = self.target_shape
-        
-        # Calculate padding values
-        pad_d = max(target_d - d, 0)
-        pad_h = max(target_h - h, 0)
-        pad_w = max(target_w - w, 0)
-        
-        # Calculate padding for each dimension
-        pad_d_before = pad_d // 2
-        pad_d_after = pad_d - pad_d_before
-        pad_h_before = pad_h // 2
-        pad_h_after = pad_h - pad_h_before
-        pad_w_before = pad_w // 2
-        pad_w_after = pad_w - pad_w_before
-        
-        # Apply padding
-        padded_image = np.pad(
-            image,
-            (
-                (0, 0),  # channels
-                (pad_d_before, pad_d_after),  # depth
-                (pad_h_before, pad_h_after),  # height
-                (pad_w_before, pad_w_after)   # width
-            ),
-            mode='constant',
-            constant_values=0
-        )
-        
-        # Crop if necessary
-        if padded_image.shape[1] > target_d:
-            start = (padded_image.shape[1] - target_d) // 2
-            padded_image = padded_image[:, start:start+target_d, :, :]
-        if padded_image.shape[2] > target_h:
-            start = (padded_image.shape[2] - target_h) // 2
-            padded_image = padded_image[:, :, start:start+target_h, :]
-        if padded_image.shape[3] > target_w:
-            start = (padded_image.shape[3] - target_w) // 2
-            padded_image = padded_image[:, :, :, start:start+target_w]
-            
-        return padded_image
 
-    def _pad_label(self, label: np.ndarray) -> np.ndarray:
+    def preprocess_slice(self, slice_data):
         """
-        Pads a 3D label array (D, H, W) to match target size.
+        Preprocesses a single 2D slice into a tensor of shape (3, 224, 224).
         
         Args:
-            label (np.ndarray): Input label of shape (D, H, W)
-            
+            slice_data (np.ndarray): A single 2D slice of shape (H, W).
+        
         Returns:
-            np.ndarray: Padded label of shape (target_D, target_H, target_W)
+            torch.Tensor: Preprocessed tensor of shape (3, 224, 224).
         """
-        d, h, w = label.shape
-        target_d, target_h, target_w = self.target_shape
+        # Normalize the slice data to range [0, 1]
+        slice_data = (slice_data - slice_data.min()) / (slice_data.max() - slice_data.min() + 1e-5)
         
-        # Calculate padding values
-        pad_d = max(target_d - d, 0)
-        pad_h = max(target_h - h, 0)
-        pad_w = max(target_w - w, 0)
+        # Convert to PIL Image for resizing
+        slice_pil = Image.fromarray((slice_data * 255).astype(np.uint8))  # Convert to uint8 for PIL compatibility
         
-        # Calculate padding for each dimension
-        pad_d_before = pad_d // 2
-        pad_d_after = pad_d - pad_d_before
-        pad_h_before = pad_h // 2
-        pad_h_after = pad_h - pad_h_before
-        pad_w_before = pad_w // 2
-        pad_w_after = pad_w - pad_w_before
+        # Resize and pad to make square and match target dimensions (224x224)
+        transform = transforms.Compose([
+            transforms.Resize((224, 224), interpolation=transforms.InterpolationMode.BICUBIC),  # Resize to 224x224
+            transforms.ToTensor(),  # Convert back to tensor
+        ])
         
-        # Apply padding
-        padded_label = np.pad(
-            label,
-            (
-                (pad_d_before, pad_d_after),  # depth
-                (pad_h_before, pad_h_after),  # height
-                (pad_w_before, pad_w_after)   # width
-            ),
-            mode='constant',
-            constant_values=0
-        )
+        img_resized = transform(slice_pil)  # Shape: (1, H, W)
         
-        # Crop if necessary
-        if padded_label.shape[0] > target_d:
-            start = (padded_label.shape[0] - target_d) // 2
-            padded_label = padded_label[start:start+target_d, :, :]
-        if padded_label.shape[1] > target_h:
-            start = (padded_label.shape[1] - target_h) // 2
-            padded_label = padded_label[:, start:start+target_h, :]
-        if padded_label.shape[2] > target_w:
-            start = (padded_label.shape[2] - target_w) // 2
-            padded_label = padded_label[:, :, start:start+target_w]
-            
-        return padded_label
-    
+        # Repeat channels to make it (3, H, W)
+        img_resized = img_resized.repeat(3, 1, 1)  # Shape: (3, H, W)
+        
+        return img_resized
+
     def __getitem__(self, idx):
-        img_path = self.image_paths[idx]
+        """
+        Loads a single slice from the dataset.
+        
+        Args:
+            idx (int): Index of the sample.
+        
+        Returns:
+            torch.Tensor: Tensor of shape (3, 224, 224) for the selected slice.
+        """
+        #img_path = self.image_paths[idx]
+        nifti_path, slice_idx = self.image_slices[idx]
         label_path = self.label_paths[idx]
-        patient_folder = os.path.basename(os.path.dirname(img_path))
+        patient_folder = os.path.basename(os.path.dirname(nifti_path))
         patient_label = self.patient_labels.get(patient_folder, -1)
         patient_label = self.label_mapping.get(patient_label, -1)  # Default to -1 if not in mapping
         patient_label = torch.tensor(patient_label, dtype=torch.long)
-        # Load images using nibabel
-        img_nib = nib.load(img_path)
-        #label_nib = nib.load(label_path)
         
-        img = img_nib.get_fdata().astype(np.float32)  
-        #label = label_nib.get_fdata().astype(np.int64)  
-       
-        # Normalize image to [0,1]
-        img = (img - img.min()) / (img.max() - img.min() + 1e-5)
+        # Load the NIfTI file and extract the specified slice
+        img = nib.load(nifti_path)
+        data = img.get_fdata()  # Get the image data as a NumPy array
+        slice_data = data[:, :, slice_idx]  # Extract the specified slice
         
-        # Convert to tensors and add channel dim
-        img = torch.tensor(img).unsqueeze(0)  # (1, D, H, W)
-        #img = img.repeat(3, 1, 1, 1)  # Repeat to get 3 channels: (3, D, H, W)
-        #label = torch.tensor(label)
+        # Preprocess the slice
+        tensor = self.preprocess_slice(slice_data)
         
-        # Apply padding to match target shape
-        img = self._pad_image(img)
-        #label = self._pad_label(label)  # Ensure labels are also the same size
-        
-        if self.transform:
-            img = self.transform(img)
-        img = img.squeeze(0)
-       
-        return img, patient_label
+        return tensor, patient_label
+
 
 def get_target_model(target_name, device):
     """
