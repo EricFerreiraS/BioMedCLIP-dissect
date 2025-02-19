@@ -10,7 +10,8 @@ from PIL import Image
 
 DATASET_ROOTS = {"imagenet_val": "YOUR_PATH/ImageNet_val/",
                 "broden": "/mnt/data/broden1_224/images/",
-                "acdc_train": "/mnt/data/ACDC/training/"}
+                "acdc_train": "/mnt/data/ACDC/training/",
+                "mnm2s": "/mnt/data/MnM2s/MnM2/"}
 
 class ACDCDataset(Dataset):
     def __init__(self, data_dir, transform=None, target_shape=(3,224,224)):  
@@ -118,6 +119,102 @@ class ACDCDataset(Dataset):
         
         return tensor, patient_label
 
+class MnMsDataset(Dataset):
+    def __init__(self, data_dir, transform=None, target_shape=(3, 224, 224)):  
+        self.data_dir = data_dir + "dataset/"
+        self.labels_csv = data_dir + "dataset_information.csv"
+        self.transform = transform
+        self.target_shape = target_shape
+        self.image_slices = []
+        self.labels = self.load_labels()
+        
+        # Collect all NIfTI file paths and their corresponding slice indices
+        for patient_folder in os.listdir(self.data_dir):
+            patient_path = os.path.join(self.data_dir, patient_folder)
+            if os.path.isdir(patient_path):
+                for file in os.listdir(patient_path):
+                    if file.endswith(".nii.gz") and "gt" not in file and "CINE" not in file:
+                        nifti_path = os.path.join(patient_path, file)
+                        img = nib.load(nifti_path)
+                        num_slices = img.shape[2]  # Number of slices along z-axis
+                        for slice_idx in range(num_slices):
+                            self.image_slices.append((nifti_path, slice_idx, patient_folder))
+
+    def __len__(self):
+        return len(self.image_slices)
+    
+    def load_labels(self):
+        """
+        Load patient labels from a CSV file.
+        Assumes the CSV has 'subject_code' for patient ID and 'disease' for label.
+        """
+        df = pd.read_csv(self.labels_csv)
+        labels = {int(row['SUBJECT_CODE']): row['DISEASE'] for _, row in df.iterrows()}
+        unique_labels = sorted(set(labels.values()))
+        self.label_mapping = {label: idx for idx, label in enumerate(unique_labels)}
+        return labels
+    
+    def create_label_mapping(self):
+        """
+        Create a mapping from disease labels to numeric values.
+        
+        Returns:
+            dict: A dictionary mapping each disease label (e.g., 'Healthy') to a unique integer (e.g., 0).
+        """
+        # Extract the unique disease labels from the loaded labels
+        unique_labels = set(self.labels.values())  # Disease labels
+        
+        # Create a mapping from text labels to numbers
+        label_mapping = {label: idx for idx, label in enumerate(sorted(unique_labels))}
+        return label_mapping
+
+
+    def preprocess_slice(self, slice_data):
+        """Preprocesses a 2D slice into a tensor of shape (3, 224, 224)."""
+        if slice_data is None or slice_data.size == 0:
+            raise ValueError("Received an empty or None slice.")
+
+        slice_data = np.squeeze(slice_data)  # Ensure it's 2D
+        if len(slice_data.shape) != 2:
+            raise ValueError(f"Expected 2D slice, got shape {slice_data.shape}")
+
+        slice_data = np.nan_to_num(slice_data, nan=0.0)  # Replace NaNs
+        slice_data = slice_data.astype(np.float32)  # Ensure correct type
+
+        min_val, max_val = slice_data.min(), slice_data.max()
+        if max_val - min_val < 1e-5:  # Prevent division by zero
+            slice_data = np.zeros_like(slice_data)  # Replace with blank image
+        else:
+            slice_data = (slice_data - min_val) / (max_val - min_val)
+
+        slice_pil = Image.fromarray((slice_data * 255).astype(np.uint8))  
+
+        transform = transforms.Compose([
+            transforms.Resize((224, 224), interpolation=transforms.InterpolationMode.BICUBIC),
+            transforms.ToTensor(),
+        ])
+        
+        img_resized = transform(slice_pil)  # Shape: (1, H, W)
+        img_resized = img_resized.repeat(3, 1, 1)  # Convert to (3, 224, 224)
+
+        return img_resized
+
+    def __getitem__(self, idx):
+        """
+        Loads a single slice from the dataset.
+        """
+        nifti_path, slice_idx, patient_folder = self.image_slices[idx]
+        #print(self.labels)
+        patient_label = self.labels[int(patient_folder)]
+        patient_label = self.label_mapping.get(patient_label, -1)
+        patient_label = torch.tensor(patient_label, dtype=torch.long)
+        img = nib.load(nifti_path)
+        data = img.get_fdata()
+        slice_data = data[:, :, slice_idx]
+    
+        tensor = self.preprocess_slice(slice_data)
+        return tensor, patient_label
+
 
 def get_target_model(target_name, device):
     """
@@ -169,6 +266,9 @@ def get_data(dataset_name, preprocess=None):
     
     elif dataset_name == "acdc_train":
         data = ACDCDataset(DATASET_ROOTS["acdc_train"], transform=None)
+
+    elif dataset_name == "mnm2s":
+        data = MnMsDataset(DATASET_ROOTS["mnm2s"], transform=None)
         
     elif dataset_name in DATASET_ROOTS.keys():
         data = datasets.ImageFolder(DATASET_ROOTS[dataset_name], preprocess)

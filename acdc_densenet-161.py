@@ -6,7 +6,7 @@ import torchvision.models as models
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from data_utils import ACDCDataset
-
+from torchvision import transforms
 
 def save_model(model, optimizer, epoch, loss, save_path="densenet_acdc.pth"):
     checkpoint = {
@@ -23,8 +23,13 @@ def train_model(train_dir, test_dir, num_epochs=50, batch_size=16, learning_rate
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     writer = SummaryWriter("runs/acdc_densenet")
 
+    transform_imagenet = transforms.Compose([
+    transforms.Resize((224, 224)),  # Resize images to match ResNet input size
+    transforms.ToTensor(),          # Convert images to tensors
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # Normalize using ImageNet stats
+    ])
     # Load datasets
-    train_dataset = ACDCDataset(train_dir, transform=None)
+    train_dataset = ACDCDataset(train_dir, transform=transform_imagenet)
     test_dataset = ACDCDataset(test_dir, transform=None)
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
@@ -32,22 +37,22 @@ def train_model(train_dir, test_dir, num_epochs=50, batch_size=16, learning_rate
 
     # Load DenseNet-121
     model = models.densenet161(weights='DenseNet161_Weights.IMAGENET1K_V1')
+    #model = models.densenet161(weights=None)
 
     # Freeze all layers
     for param in model.parameters():
         param.requires_grad = False
-
+    '''
     # Unfreeze the last dense block (denseblock4)
     for name, param in model.named_parameters():
         if 'denseblock4' in name:
             param.requires_grad = True
-
+    '''
     # Unfreeze the classifier layer
     for name, param in model.named_parameters():
         if 'classifier' in name:
             param.requires_grad = True
-
-
+    
     model.classifier = nn.Linear(model.classifier.in_features, 5)  # 4 classes in ACDC
     model = model.to(device)
 
@@ -83,7 +88,7 @@ def train_model(train_dir, test_dir, num_epochs=50, batch_size=16, learning_rate
         print(f"Epoch {epoch+1}/{num_epochs}, Loss: {total_loss/len(train_loader):.4f}, Accuracy: {train_acc:.2%}")
         if train_acc > best_acc:
             best_acc = train_acc
-            save_model(model, optimizer, epoch, train_acc, "models/best_densenet_acdc.pth")
+            save_model(model, optimizer, epoch, train_acc, "models/best_densenet_acdc_fc.pth")
 
     # Evaluate on test set
     model.eval()

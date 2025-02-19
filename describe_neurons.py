@@ -21,7 +21,7 @@ parser.add_argument("--target_layers", type=str, default="conv1,layer1,layer2,la
                     help="""Which layer neurons to describe. String list of layer names to describe, separated by comma(no spaces). 
                           Follows the naming scheme of the Pytorch module used""")
 parser.add_argument("--d_probe", type=str, default="broden", 
-                    choices = ["imagenet_broden", "cifar100_val", "imagenet_val", "broden", "imagenet_broden", "acdc_train"])
+                    choices = ["imagenet_broden", "cifar100_val", "imagenet_val", "broden", "imagenet_broden", "acdc_train", "mnm2s"])
 parser.add_argument("--concept_set", type=str, default="data/20k.txt", help="Path to txt file containing concept set")
 parser.add_argument("--batch_size", type=int, default=200, help="Batch size when running CLIP/target model")
 parser.add_argument("--device", type=str, default="cuda", help="whether to use GPU/which gpu")

@@ -13,7 +13,7 @@ from torchvision import transforms
 from data_utils import ACDCDataset
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
-def save_model(model, optimizer, epoch, loss, save_path="resnet152_acdc.pth"):
+def save_model(model, optimizer, epoch, loss, save_path="resnet152_acdc_scratch.pth"):
     checkpoint = {
         "epoch": epoch,
         "model_state_dict": model.state_dict(),
@@ -28,8 +28,14 @@ def train_model(train_dir, test_dir, num_epochs=50, batch_size=16, learning_rate
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     writer = SummaryWriter("runs/acdc_resnet152")
 
+    transform_resnet152 = transforms.Compose([
+    transforms.Resize((224, 224)),  # Resize images to match ResNet input size
+    transforms.ToTensor(),          # Convert images to tensors
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # Normalize using ImageNet stats
+    ])
+
     # Load datasets
-    train_dataset = ACDCDataset(train_dir,transform=None)
+    train_dataset = ACDCDataset(train_dir,transform=transform_resnet152)
     test_dataset = ACDCDataset(test_dir,transform=None)
     
     #unique_labels = set(train_dataset.patient_labels.values())
@@ -41,17 +47,20 @@ def train_model(train_dir, test_dir, num_epochs=50, batch_size=16, learning_rate
     # Load ResNet-152
     #model = models.resnet152(weights=None)
     model = models.resnet152(weights='ResNet152_Weights.IMAGENET1K_V2')
-
+    '''
+    for param in model.parameters():
+        param.requires_grad = True
+    '''
     # Freeze all layers
     for param in model.parameters():
         param.requires_grad = False
 
     for param in model.layer4.parameters():
             param.requires_grad = True
-    
+
     for param in model.fc.parameters():
             param.requires_grad = True
-
+    
     model.fc = nn.Linear(model.fc.in_features, 5)  # 4 classes in ACDC
     model = model.to(device)
     
@@ -88,7 +97,7 @@ def train_model(train_dir, test_dir, num_epochs=50, batch_size=16, learning_rate
         print(f"Epoch {epoch+1}/{num_epochs}, Loss: {total_loss/len(train_loader):.4f}, Accuracy: {train_acc:.2%}")
         if train_acc > best_acc:
             best_acc = train_acc
-            save_model(model, optimizer, epoch, train_acc, "models/best_resnet152_acdc.pth")
+            save_model(model, optimizer, epoch, train_acc, "models/best_resnet152_acdc_test.pth")
     
     # Evaluate on test set
     model.eval()
@@ -107,4 +116,4 @@ def train_model(train_dir, test_dir, num_epochs=50, batch_size=16, learning_rate
     writer.close()
 
 if __name__ == "__main__":
-    train_model("/mnt/data/ACDC/training/", "/mnt/data/ACDC/testing/", num_epochs=50, batch_size=32)
+    train_model("/mnt/data/ACDC/training/", "/mnt/data/ACDC/testing/", num_epochs=25, batch_size=32)
