@@ -69,6 +69,14 @@ def train_model(train_dir, test_dir=None, num_epochs=50, batch_size=16, learning
     # Load ResNet-152
     #model = models.resnet152(weights=None)
     model = models.resnet152(weights='ResNet152_Weights.IMAGENET1K_V2')
+
+    #model.fc = nn.Linear(model.fc.in_features, 8)  # Match the original training setup
+    
+    #checkpoint = torch.load('models/best_resnet152_MnMs_scratch_img.pth', map_location=device)
+    #model.load_state_dict(checkpoint["model_state_dict"])
+
+    model.fc = nn.Linear(model.fc.in_features, num_classes)  # 5 classes in ACDC and 8 in MnMs
+
     '''
     for param in model.parameters():
         param.requires_grad = True
@@ -82,8 +90,7 @@ def train_model(train_dir, test_dir=None, num_epochs=50, batch_size=16, learning
 
     for param in model.fc.parameters():
             param.requires_grad = True
-    
-    model.fc = nn.Linear(model.fc.in_features, num_classes)  # 5 classes in ACDC and 8 in MnMs
+
     model = model.to(device)
     
     criterion = nn.CrossEntropyLoss(label_smoothing=0.1)

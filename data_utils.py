@@ -240,10 +240,37 @@ def get_target_model(target_name, device):
         preprocess = weights.transforms()
         target_model = eval("models.{}(weights=weights).to(device)".format(target_name))
     elif "resnet" in target_name:
-        target_name_cap = target_name.replace("resnet", "ResNet")
-        weights = eval("models.{}_Weights.IMAGENET1K_V1".format(target_name_cap))
-        preprocess = weights.transforms()
-        target_model = eval("models.{}(weights=weights).to(device)".format(target_name))
+        if target_name.endswith("_custom"):  # Handle custom ResNet models
+            target_name_cap = target_name[:-7]#.replace("resnet", "ResNet")
+            custom_path = "models/best_resnet152_MnMs_scratch_img.pth"
+            target_model = eval(f"models.{target_name_cap}(weights=None).to(device)")
+            target_model.fc = torch.nn.Linear(target_model.fc.in_features, 8).to(device)  # Match the original training setup
+            checkpoint = torch.load(custom_path, map_location=device)
+            state_dict = checkpoint['state_dict'] if 'state_dict' in checkpoint else checkpoint
+            target_model.load_state_dict(state_dict['model_state_dict'])
+            target_model.eval()
+            preprocess = get_resnet_imagenet_preprocess()
+        else:
+            target_name_cap = target_name.replace("resnet", "ResNet")
+            weights = eval("models.{}_Weights.IMAGENET1K_V1".format(target_name_cap))
+            preprocess = weights.transforms()
+            target_model = eval("models.{}(weights=weights).to(device)".format(target_name))
+    elif "densenet" in target_name:
+        if target_name.endswith("_custom"):  # Handle custom ResNet models
+            target_name_cap = target_name[:-7]#.replace("resnet", "ResNet")
+            custom_path = "models/best_densenet161_MnMs_scratch_img.pth"
+            target_model = eval(f"models.{target_name_cap}(weights=None).to(device)")
+            target_model.classifier = torch.nn.Linear(target_model.classifier.in_features, 8).to(device)  # Match the original training setup
+            checkpoint = torch.load(custom_path, map_location=device)
+            state_dict = checkpoint['state_dict'] if 'state_dict' in checkpoint else checkpoint
+            target_model.load_state_dict(state_dict['model_state_dict'])
+            target_model.eval()
+            preprocess = get_resnet_imagenet_preprocess()
+        else:
+            target_name_cap = target_name.replace("densenet", "DenseNet")
+            weights = eval("models.{}_Weights.IMAGENET1K_V1".format(target_name_cap))
+            preprocess = weights.transforms()
+            target_model = eval("models.{}(weights=weights).to(device)".format(target_name))
     
     target_model.eval()
     return target_model, preprocess

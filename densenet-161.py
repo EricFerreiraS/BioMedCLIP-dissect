@@ -61,6 +61,13 @@ def train_model(train_dir, test_dir=None, num_epochs=50, batch_size=16, learning
     # Load DenseNet-121
     model = models.densenet161(weights='DenseNet161_Weights.IMAGENET1K_V1')
     #model = models.densenet161(weights=None)
+
+    #model.classifier = nn.Linear(model.classifier.in_features, 8)  # Match the original training setup
+    
+    #checkpoint = torch.load('models/best_densenet161_MnMs_scratch_img.pth', map_location=device)
+    #model.load_state_dict(checkpoint["model_state_dict"])
+
+    model.classifier = nn.Linear(model.classifier.in_features, num_classes)  # 4 classes in ACDC
     '''
     for param in model.parameters():
         param.requires_grad = True
@@ -71,16 +78,15 @@ def train_model(train_dir, test_dir=None, num_epochs=50, batch_size=16, learning
         param.requires_grad = False
     
     # Unfreeze the last dense block (denseblock4)
-    #for name, param in model.named_parameters():
-    #    if 'denseblock4' in name:
-    #        param.requires_grad = True
+    for name, param in model.named_parameters():
+        if 'features' in name: #features
+            param.requires_grad = True
     
     # Unfreeze the classifier layer
     for name, param in model.named_parameters():
         if 'classifier' in name:
             param.requires_grad = True
     
-    model.classifier = nn.Linear(model.classifier.in_features, num_classes)  # 4 classes in ACDC
     model = model.to(device)
 
     criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
@@ -139,5 +145,5 @@ def train_model(train_dir, test_dir=None, num_epochs=50, batch_size=16, learning
     writer.close()
 
 if __name__ == "__main__":
-    #train_model("/mnt/data/ACDC/training/", "/mnt/data/ACDC/testing/", num_epochs=50, batch_size=64, dataset_name='ACDC', num_classes=5)
+    #train_model("/mnt/data/ACDC/training/", "/mnt/data/ACDC/testing/", num_epochs=25, batch_size=32, dataset_name='ACDC', num_classes=5)
     train_model("/mnt/data/MnM2s/MnM2/",None, num_epochs=25, batch_size=32, dataset_name="MnMs", num_classes=8)
