@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torchvision.models as models
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader, random_split, WeightedRandomSampler
 from torch.utils.tensorboard import SummaryWriter
 from data_utils import ACDCDataset, MnMsDataset
 from torchvision import transforms
@@ -20,6 +20,12 @@ def save_model(model, optimizer, epoch, loss, dataset_name, save_path="densenet1
     torch.save(checkpoint, save_path)
     print(f"Model saved at epoch {epoch} to {save_path}")
 
+def calculate_class_distribution(dataset):
+    class_counts = {}
+    for _, label in dataset:
+        label = label.item() if torch.is_tensor(label) else label
+        class_counts[label] = class_counts.get(label, 0) + 1
+    return class_counts
 
 def train_model(train_dir, test_dir=None, num_epochs=50, batch_size=16, learning_rate=1e-4, dataset_name="ACDC", num_classes=5):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -54,8 +60,29 @@ def train_model(train_dir, test_dir=None, num_epochs=50, batch_size=16, learning
         train_dataset = full_dataset
         test_dataset = DatasetClass(test_dir, transform=transform_imagenet)
 
+    train_class_distribution = calculate_class_distribution(train_dataset)
+    #test_class_distribution = calculate_class_distribution(test_dataset)
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
+    print("Train Class Distribution:", train_class_distribution)
+    #print("Test Class Distribution:", test_class_distribution)
+    
+    # Compute class weights inversely proportional to class frequencies
+    class_weights = {cls: 1.0 / count for cls, count in train_class_distribution.items()}
+
+    # Create weights for each sample based on its class
+    sample_weights = [class_weights[int(label)] for _, label in train_dataset]
+
+    # Convert sample weights to a tensor
+    sample_weights = torch.tensor(sample_weights, dtype=torch.float)
+
+    # Create the WeightedRandomSampler
+    sampler = WeightedRandomSampler(weights=sample_weights, num_samples=len(sample_weights), replacement=True)
+
+    # Compute weights inversely proportional to class frequencies
+    class_weights = torch.tensor([1.0 / train_class_distribution[c] for c in range(num_classes)])
+    class_weights = class_weights.to(device)
+
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False, sampler=sampler, num_workers=4)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
 
     # Load DenseNet-121
@@ -68,7 +95,7 @@ def train_model(train_dir, test_dir=None, num_epochs=50, batch_size=16, learning
     #model.load_state_dict(checkpoint["model_state_dict"])
 
     model.classifier = nn.Linear(model.classifier.in_features, num_classes)  # 4 classes in ACDC
-    '''
+    
     for param in model.parameters():
         param.requires_grad = True
 
@@ -86,7 +113,7 @@ def train_model(train_dir, test_dir=None, num_epochs=50, batch_size=16, learning
     for name, param in model.named_parameters():
         if 'classifier' in name:
             param.requires_grad = True
-    
+    '''
     model = model.to(device)
 
     criterion = nn.CrossEntropyLoss(label_smoothing=0.1)

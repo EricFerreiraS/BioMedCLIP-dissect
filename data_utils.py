@@ -59,7 +59,7 @@ class ACDCDataset(Dataset):
         """ Create a mapping from text labels to numeric values. """
         unique_labels = set(self.patient_labels.values())  # Extract unique labels
         label_mapping = {label: idx for idx, label in enumerate(sorted(unique_labels))}  # Assign numbers
-        #print(f"Label Mapping: {label_mapping}")  # Debugging: Check mapping
+        print(f"Label Mapping: {label_mapping}")  # Debugging: Check mapping
         return label_mapping
 
     def preprocess_slice(self, slice_data):
@@ -166,6 +166,7 @@ class MnMsDataset(Dataset):
         
         # Create a mapping from text labels to numbers
         label_mapping = {label: idx for idx, label in enumerate(sorted(unique_labels))}
+        print(f"Label Mapping: {label_mapping}")  # Debugging: Check mapping
         return label_mapping
 
 

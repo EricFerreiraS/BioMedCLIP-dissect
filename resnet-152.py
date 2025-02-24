@@ -7,7 +7,7 @@ import torch.nn.functional as F
 import torchvision.models as models
 import nibabel as nib
 import numpy as np
-from torch.utils.data import Dataset, DataLoader, random_split
+from torch.utils.data import Dataset, DataLoader, random_split, WeightedRandomSampler
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
 from data_utils import ACDCDataset, MnMsDataset
@@ -24,6 +24,13 @@ def save_model(model, optimizer, epoch, loss, dataset_name, save_path="resnet152
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     torch.save(checkpoint, save_path)
     print(f"Model saved at epoch {epoch} to {save_path}")
+
+def calculate_class_distribution(dataset):
+    class_counts = {}
+    for _, label in dataset:
+        label = label.item() if torch.is_tensor(label) else label
+        class_counts[label] = class_counts.get(label, 0) + 1
+    return class_counts
 
 # Training setup
 def train_model(train_dir, test_dir=None, num_epochs=50, batch_size=16, learning_rate=1e-4, dataset_name="ACDC", num_classes=5):
@@ -59,11 +66,32 @@ def train_model(train_dir, test_dir=None, num_epochs=50, batch_size=16, learning
         train_dataset = full_dataset
         test_dataset = DatasetClass(test_dir, transform=transform_resnet152)
 
+    train_class_distribution = calculate_class_distribution(train_dataset)
+    #test_class_distribution = calculate_class_distribution(test_dataset)
+
+    print("Train Class Distribution:", train_class_distribution)
+    #print("Test Class Distribution:", test_class_distribution)
     
+    # Compute class weights inversely proportional to class frequencies
+    class_weights = {cls: 1.0 / count for cls, count in train_class_distribution.items()}
+
+    # Create weights for each sample based on its class
+    sample_weights = [class_weights[int(label)] for _, label in train_dataset]
+
+    # Convert sample weights to a tensor
+    sample_weights = torch.tensor(sample_weights, dtype=torch.float)
+
+    # Create the WeightedRandomSampler
+    sampler = WeightedRandomSampler(weights=sample_weights, num_samples=len(sample_weights), replacement=True)
+
+    # Compute weights inversely proportional to class frequencies
+    class_weights = torch.tensor([1.0 / train_class_distribution[c] for c in range(num_classes)])
+    class_weights = class_weights.to(device)
+
     #unique_labels = set(train_dataset.patient_labels.values())
     #print(f"Unique labels in dataset: {unique_labels}")
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False, num_workers=4,sampler=sampler)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
     
     # Load ResNet-152
@@ -86,14 +114,14 @@ def train_model(train_dir, test_dir=None, num_epochs=50, batch_size=16, learning
         param.requires_grad = False
 
     #for param in model.layer4.parameters():
-    #        param.requires_grad = True
+    #       param.requires_grad = True
 
     for param in model.fc.parameters():
             param.requires_grad = True
-
+    
     model = model.to(device)
     
-    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
+    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)#,weight=class_weights)
     #optimizer = optim.SGD(model.parameters(), lr=learning_rate, weight_decay=1e-4,momentum=0.9)
     #optimizer = optim.AdamW(model.fc.parameters(), lr=learning_rate, weight_decay=1e-4)
     optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-4)
@@ -105,7 +133,16 @@ def train_model(train_dir, test_dir=None, num_epochs=50, batch_size=16, learning
         model.train()
         total_loss, correct, total = 0, 0, 0
         
-        for images, labels in train_loader:
+        for i, (images, labels) in enumerate(train_loader):
+            '''
+            if i == 2:  # Print only the first 3 batches
+                break
+            else:
+                unique_labels, counts = torch.unique(labels, return_counts=True)
+                print(f"Batch {i}:")
+                for label, count in zip(unique_labels, counts):
+                    print(f"  Class {label.item()}: {count.item()} samples")
+            '''
             images, labels = images.to(device), labels.to(device)
             optimizer.zero_grad()
             outputs = model(images)
@@ -150,5 +187,5 @@ def train_model(train_dir, test_dir=None, num_epochs=50, batch_size=16, learning
     writer.close()
 
 if __name__ == "__main__":
-    train_model("/mnt/data/ACDC/training/", "/mnt/data/ACDC/testing/", num_epochs=25, batch_size=32, dataset_name="ACDC", num_classes=5)
-    #train_model("/mnt/data/MnM2s/MnM2/",None, num_epochs=25, batch_size=32, dataset_name="MnMs", num_classes=8)
+    #train_model("/mnt/data/ACDC/training/", "/mnt/data/ACDC/testing/", num_epochs=25, batch_size=32, dataset_name="ACDC", num_classes=5)
+    train_model("/mnt/data/MnM2s/MnM2/",None, num_epochs=25, batch_size=32, dataset_name="MnMs", num_classes=8)
