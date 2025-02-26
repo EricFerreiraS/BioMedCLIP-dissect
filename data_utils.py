@@ -36,7 +36,7 @@ class ACDCDataset(Dataset):
                         img = nib.load(nifti_path)
                         num_slices = img.shape[2]  # Number of slices along z-axis
                         for slice_idx in range(num_slices):
-                            self.image_slices.append((nifti_path, slice_idx))  # Store path and slice index
+                            self.image_slices.append((nifti_path, slice_idx, patient_folder,file))  # Store path and slice index
                             self.label_paths.append(label_path)
                             self.image_paths.append(nifti_path)
     
@@ -102,14 +102,14 @@ class ACDCDataset(Dataset):
             torch.Tensor: Tensor of shape (3, 224, 224) for the selected slice.
         """
         #img_path = self.image_paths[idx]
-        nifti_path, slice_idx = self.image_slices[idx]
+        nifti_path, slice_idx, patient_folder, _ = self.image_slices[idx]
         label_path = self.label_paths[idx]
         patient_folder = os.path.basename(os.path.dirname(nifti_path))
         patient_label = self.patient_labels.get(patient_folder, -1)
         patient_label = self.label_mapping.get(patient_label, -1)  # Default to -1 if not in mapping
         patient_label = torch.tensor(patient_label, dtype=torch.long)
-        
         # Load the NIfTI file and extract the specified slice
+        #print(slice_idx,_, patient_label)
         img = nib.load(nifti_path)
         data = img.get_fdata()  # Get the image data as a NumPy array
         slice_data = data[:, :, slice_idx]  # Extract the specified slice
@@ -127,6 +127,7 @@ class MnMsDataset(Dataset):
         self.target_shape = target_shape
         self.image_slices = []
         self.labels = self.load_labels()
+        self.label_mapping = self.create_label_mapping()
         
         # Collect all NIfTI file paths and their corresponding slice indices
         for patient_folder in os.listdir(self.data_dir):
@@ -138,7 +139,7 @@ class MnMsDataset(Dataset):
                         img = nib.load(nifti_path)
                         num_slices = img.shape[2]  # Number of slices along z-axis
                         for slice_idx in range(num_slices):
-                            self.image_slices.append((nifti_path, slice_idx, patient_folder))
+                            self.image_slices.append((nifti_path, slice_idx, patient_folder, file))
 
     def __len__(self):
         return len(self.image_slices)
@@ -204,7 +205,7 @@ class MnMsDataset(Dataset):
         """
         Loads a single slice from the dataset.
         """
-        nifti_path, slice_idx, patient_folder = self.image_slices[idx]
+        nifti_path, slice_idx, patient_folder, _ = self.image_slices[idx]
         #print(self.labels)
         patient_label = self.labels[int(patient_folder)]
         patient_label = self.label_mapping.get(patient_label, -1)
