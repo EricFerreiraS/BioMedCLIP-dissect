@@ -79,7 +79,7 @@ def hook_fn(module, input, output):
 
 target_layer = None
 
-def feature_extraction (train_dir, test_dir=None, batch_size=1, dataset_name="ACDC", num_classes=5, model_name='resnet152'):
+def feature_extraction (train_dir, test_dir=None, batch_size=1, dataset_name="ACDC",train_test = 'train', model_name='resnet152'):
     transform_resnet152 = transforms.Compose([
         transforms.Resize((224, 224)),  # Resize images to match ResNet input size
         transforms.ToTensor(),          # Convert images to tensors
@@ -112,7 +112,7 @@ def feature_extraction (train_dir, test_dir=None, batch_size=1, dataset_name="AC
     
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
-    #test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
 
     if model_name == 'resnet152':
         custom_path = "models/best_resnet152_MnMs_scratch_img.pth"
@@ -139,22 +139,31 @@ def feature_extraction (train_dir, test_dir=None, batch_size=1, dataset_name="AC
 
     image_name=[]
     image_class=[]
-    for images, labels, patient_folders, slice_idx in train_loader:
-        images = images.to(device)
-        labels = labels.to(device)
-        with torch.no_grad():
-            model(images)
-        image_class.append(labels[0].item())
-        image_name.append(patient_folders[0].split('/')[-1]+'_'+str(slice_idx[0].item()))
+    if train_test == 'train':
+        for images, labels, patient_folders, slice_idx in train_loader:
+            images = images.to(device)
+            labels = labels.to(device)
+            with torch.no_grad():
+                model(images)
+            image_class.append(labels[0].item())
+            image_name.append(patient_folders[0].split('/')[-1]+'_'+str(slice_idx[0].item()))
+    else:
+        for images, labels, patient_folders, slice_idx in test_loader:
+            images = images.to(device)
+            labels = labels.to(device)
+            with torch.no_grad():
+                model(images)
+            image_class.append(labels[0].item())
+            image_name.append(patient_folders[0].split('/')[-1]+'_'+str(slice_idx[0].item()))
 
     d_avg = pd.DataFrame(activations_avg)
     n = pd.DataFrame(data=zip(image_name,image_class), columns=['name','class'])
     dt_avg = d_avg.merge(n,how='inner',left_index=True, right_index=True)
-    dt_avg.to_csv(f'features/dt_avg_{model_name}_{dataset_name}.csv')
+    dt_avg.to_csv(f'features/dt_avg_{model_name}_{dataset_name}_{train_test}.csv')
     hook_handle.remove()
 
 def get_top_features(model_name, dataset_name):
-    dt_avg = pd.read_csv(f'features/dt_avg_{model_name}_{dataset_name}.csv',index_col=0)
+    dt_avg = pd.read_csv(f'features/dt_avg_{model_name}_{dataset_name}_train.csv',index_col=0)
 
     def top_n_columns(row, n=10):
         return row.nlargest(n).index.tolist()
@@ -214,6 +223,8 @@ def connect_clip_features(model_name, dataset_name, data_dir, layer='layer4'):
     
     df_clip_l = get_clip_results(data_dir)
 
+    df_clip_l.to_csv(f'features/df_clip_{model_name}_{dataset_name}.csv',index=None)
+
     df = df_final.merge(df_clip_l, left_on=['neuron_id'], right_on=['unit'], how='left')
     df.to_csv(f'features/df_final_clip_{model_name}_{dataset_name}.csv',index=None)
 
@@ -221,17 +232,20 @@ if __name__ == '__main__':
     '''
     train_dir = "/mnt/data/ACDC/training/"
     test_dir = "/mnt/data/ACDC/testing/"
-    feature_extraction(train_dir, test_dir, dataset_name="ACDC", model_name='densenet161')
+    #feature_extraction(train_dir, test_dir, dataset_name="ACDC", train_test='train', model_name='resnet152')
+    #feature_extraction(train_dir, test_dir, dataset_name="ACDC", train_test='test', model_name='resnet152')
+    feature_extraction(train_dir, test_dir, dataset_name="ACDC", train_test='train', model_name='densenet161')
     
     train_dir = "/mnt/data/MnM2s/MnM2/"
     test_dir = None
-    feature_extraction(train_dir, test_dir, dataset_name="MnMs", model_name='densenet161')
+    feature_extraction(train_dir, test_dir, dataset_name="MnMs", train_test='train', model_name='resnet152')
+    feature_extraction(train_dir, test_dir, dataset_name="MnMs", train_test='train', model_name='densenet161')
     '''
-    #get_top_features('resnet152', 'ACDC')
-    #get_top_features('resnet152', 'MnMs')
-    #get_top_features('densenet161', 'ACDC')
-    #get_top_features('densenet161', 'MnMs')
-    #connect_clip_features('resnet152', 'ACDC', 'resnet152_custom_25_02_21_17_31')
-    #connect_clip_features('densenet161', 'ACDC', 'densenet161_custom_25_02_21_17_37', layer='features')
-    #connect_clip_features('resnet152', 'MnMs', 'resnet152_custom_25_02_21_17_31')
-    connect_clip_features('densenet161', 'MnMs', 'densenet161_custom_25_02_21_17_37', layer='features')
+    get_top_features('resnet152', 'ACDC')
+    get_top_features('resnet152', 'MnMs')
+    get_top_features('densenet161', 'ACDC')
+    get_top_features('densenet161', 'MnMs')
+    connect_clip_features('resnet152', 'ACDC', 'resnet152_custom_acdc')
+    connect_clip_features('densenet161', 'ACDC', 'densenet161_custom_acdc', layer='features')
+    connect_clip_features('resnet152', 'MnMs', 'resnet152_custom_mnm2')
+    connect_clip_features('densenet161', 'MnMs', 'densenet161_custom_mnm2', layer='features')
