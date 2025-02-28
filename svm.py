@@ -41,6 +41,7 @@ def training_svm(train_file, test_file):
 
     svm=LinearSVC()
     svm_cv=GridSearchCV(svm,param_grid,cv=5)
+    X_train = X_train.fillna(0)
     svm_cv.fit(X_train, y_train)
 
     print("best parameters",svm_cv.best_params_)
@@ -164,14 +165,14 @@ def global_features(clf,model_name,dataset_name):
 
 if __name__ == '__main__':
 
-    train_dir='features/dt_avg_densenet161_MnMs_train.csv'
-    test_dir='features/dt_avg_densenet161_MnMs_test.csv'
-    model_name='densenet161'
+    train_dir='features/dt_avg_resnet152_MnMs_train.csv'
+    test_dir='features/dt_avg_resnet152_MnMs_test.csv'
+    model_name='resnet152'
     dataset_name='MnMs'
 
     clf, X_train, y_train, X_test, y_test = training_svm(train_dir,test_dir)
 
-    model,pred,y_test,X_test = training_evaluation(pd.concat([X_train,X_test]),pd.concat([y_train,y_test]),clf)
+    model,pred,y_test,X_test = training_evaluation(pd.concat([X_train.fillna(0),X_test.fillna(0)]),pd.concat([y_train,y_test]),clf)
 
     clf = copy.deepcopy(model)
     y_test = y_test
